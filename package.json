@@ -25,6 +25,7 @@
     "puppeteer": "^24.10.1",
     "react": "latest",
     "react-dom": "latest",
+    "react-icons": "^5.5.0",
     "tailwindcss": "latest",
     "typescript": "latest"
   },
