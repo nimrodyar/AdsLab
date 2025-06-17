@@ -1,172 +1,111 @@
 import { NextRequest, NextResponse } from 'next/server';
-import puppeteer from 'puppeteer';
 
-const MOCK_ADS = [
-  {
-    ad_text: 'Meta ad example about shoes',
-    sponsor: 'Meta',
+const META_ADS_TOKEN = process.env.META_ADS_TOKEN;
+const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
+const RAPIDAPI_APP = process.env.RAPIDAPI_APP;
+
+async function fetchMetaAds({ keywords, advertiser }: { keywords: string; advertiser: string }) {
+  if (!META_ADS_TOKEN) return { ads: [], error: 'Meta API token missing' };
+  const params = new URLSearchParams({
+    access_token: META_ADS_TOKEN,
+    ad_reached_countries: 'ALL',
+    fields: 'ad_creative_body,ad_creative_link_caption,ad_creative_link_description,ad_creative_link_title,ad_delivery_start_time,ad_delivery_stop_time,ad_snapshot_url,bylines,currency,demographic_distribution,delivery_by_region,impressions,media_url,page_id,page_name,platform,spend,ad_creative_media_type',
+    limit: '10',
+  });
+  if (keywords) params.append('q', keywords);
+  if (advertiser) params.append('search_terms', advertiser);
+  const url = `https://graph.facebook.com/v19.0/ads_archive?${params.toString()}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!res.ok) return { ads: [], error: data.error?.message || 'Meta API error' };
+  const ads = (data.data || []).map((ad: any) => ({
+    ad_text: ad.ad_creative_body || ad.ad_creative_link_description || '',
+    sponsor: ad.page_name || '',
     platform: 'meta',
-    start_date: '2024-06-01',
-    media_type: 'image',
-    advertiser: 'Meta',
-    keywords: 'shoes',
-  },
-  {
-    ad_text: 'LinkedIn ad for B2B marketing',
-    sponsor: 'LinkedIn',
+    start_date: ad.ad_delivery_start_time || '',
+    media_type: ad.ad_creative_media_type || '',
+    image: ad.media_url || '',
+    link: ad.ad_snapshot_url || '',
+  }));
+  return { ads };
+}
+
+async function fetchLinkedInAds({ keywords, advertiser }: { keywords: string; advertiser: string }) {
+  if (!RAPIDAPI_KEY) return { ads: [], error: 'RapidAPI key missing' };
+  const url = `https://linkedin-api8.p.rapidapi.com/search-ads?keywords=${encodeURIComponent(keywords || advertiser)}`;
+  const res = await fetch(url, {
+    headers: {
+      'X-RapidAPI-Key': RAPIDAPI_KEY!,
+      'X-RapidAPI-Host': 'linkedin-api8.p.rapidapi.com',
+    },
+  });
+  const data = await res.json();
+  if (!res.ok) return { ads: [], error: data.error || 'LinkedIn API error' };
+  const ads = (data.ads || data.results || []).map((ad: any) => ({
+    ad_text: ad.text || ad.description || '',
+    sponsor: ad.companyName || ad.sponsor || '',
     platform: 'linkedin',
-    start_date: '2024-06-02',
-    media_type: 'image',
-    advertiser: 'LinkedIn',
-    keywords: 'B2B',
-  },
-  {
-    ad_text: 'Google ad about shopping deals',
-    sponsor: 'Google',
+    start_date: ad.startDate || '',
+    media_type: ad.mediaType || '',
+    image: ad.imageUrl || '',
+    link: ad.url || '',
+  }));
+  return { ads };
+}
+
+async function fetchGoogleAds({ keywords }: { keywords: string }) {
+  if (!RAPIDAPI_KEY) return { ads: [], error: 'RapidAPI key missing' };
+  const url = `https://google-ads-transparency-report.p.rapidapi.com/search?query=${encodeURIComponent(keywords)}`;
+  const res = await fetch(url, {
+    headers: {
+      'X-RapidAPI-Key': RAPIDAPI_KEY!,
+      'X-RapidAPI-Host': 'google-ads-transparency-report.p.rapidapi.com',
+    },
+  });
+  const data = await res.json();
+  if (!res.ok) return { ads: [], error: data.error || 'Google API error' };
+  const ads = (data.ads || data.results || []).map((ad: any) => ({
+    ad_text: ad.text || ad.description || '',
+    sponsor: ad.advertiser || '',
     platform: 'google',
-    start_date: '2024-06-03',
-    media_type: 'video',
-    advertiser: 'Google',
-    keywords: 'shopping',
-  },
-  {
-    ad_text: 'Meta ad for summer sales',
-    sponsor: 'Meta',
-    platform: 'meta',
-    start_date: '2024-06-04',
-    media_type: 'carousel',
-    advertiser: 'Meta',
-    keywords: 'summer',
-  },
-  {
-    ad_text: 'LinkedIn ad for hiring',
-    sponsor: 'LinkedIn',
-    platform: 'linkedin',
-    start_date: '2024-06-05',
-    media_type: 'image',
-    advertiser: 'LinkedIn',
-    keywords: 'hiring',
-  },
-  {
-    ad_text: 'Google ad for travel',
-    sponsor: 'Google',
-    platform: 'google',
-    start_date: '2024-06-06',
-    media_type: 'image',
-    advertiser: 'Google',
-    keywords: 'travel',
-  },
-];
-
-function delay(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function scrapeMetaAds({ keywords, advertiser }: { keywords: string; advertiser: string }) {
-  const browser = await puppeteer.launch({ headless: true });
-  const page = await browser.newPage();
-  const searchUrl = `https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=US&q=${encodeURIComponent(
-    keywords || advertiser
-  )}&search_type=keyword_unordered`;
-  await page.goto(searchUrl, { waitUntil: 'networkidle2' });
-  await delay(3000);
-  const ads = await page.evaluate(() => {
-    const adNodes = document.querySelectorAll('[data-testid="ad-preview"]');
-    return Array.from(adNodes).map((ad: any) => {
-      const adText = ad.innerText || '';
-      const sponsor = ad.querySelector('[data-testid="ad-sponsor"]')?.innerText || '';
-      const startDate = ad.innerText.match(/Started running on (\w+ \d+, \d+)/)?.[1] || '';
-      return {
-        ad_text: adText,
-        sponsor,
-        platform: 'meta',
-        start_date: startDate,
-        media_type: 'unknown',
-      };
-    });
-  });
-  await browser.close();
-  return ads;
-}
-
-async function scrapeLinkedInAds({ advertiser }: { advertiser: string }) {
-  if (!advertiser) return [];
-  const browser = await puppeteer.launch({ headless: true });
-  const page = await browser.newPage();
-  // LinkedIn company ad transparency page
-  const company = advertiser.replace(/ /g, '').toLowerCase();
-  const url = `https://www.linkedin.com/company/${company}/ads/`;
-  await page.goto(url, { waitUntil: 'networkidle2' });
-  await delay(3000);
-  const ads = await page.evaluate(() => {
-    const adNodes = document.querySelectorAll('.ad-review-card');
-    return Array.from(adNodes).map((ad: any) => {
-      const adText = ad.innerText || '';
-      const sponsor = document.querySelector('h1')?.innerText || '';
-      return {
-        ad_text: adText,
-        sponsor,
-        platform: 'linkedin',
-        start_date: '',
-        media_type: 'unknown',
-      };
-    });
-  });
-  await browser.close();
-  return ads;
-}
-
-async function scrapeGoogleAds({ keywords }: { keywords: string }) {
-  const browser = await puppeteer.launch({ headless: true });
-  const page = await browser.newPage();
-  const url = `https://adstransparency.google.com/ads/search?query=${encodeURIComponent(keywords)}`;
-  await page.goto(url, { waitUntil: 'networkidle2' });
-  await delay(5000);
-  const ads = await page.evaluate(() => {
-    const adNodes = document.querySelectorAll('div[data-test-id="ad-card"]');
-    return Array.from(adNodes).map((ad: any) => {
-      const adText = ad.innerText || '';
-      const sponsor = ad.querySelector('[data-test-id="ad-card-advertiser-name"]')?.innerText || '';
-      return {
-        ad_text: adText,
-        sponsor,
-        platform: 'google',
-        start_date: '',
-        media_type: 'unknown',
-      };
-    });
-  });
-  await browser.close();
-  return ads;
+    start_date: ad.startDate || '',
+    media_type: ad.mediaType || '',
+    image: ad.imageUrl || '',
+    link: ad.url || '',
+  }));
+  return { ads };
 }
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const platform = searchParams.get('platform') || '';
-  const advertiser = searchParams.get('advertiser')?.toLowerCase() || '';
-  const keywords = searchParams.get('keywords')?.toLowerCase() || '';
+  const advertiser = searchParams.get('advertiser') || '';
+  const keywords = searchParams.get('keywords') || '';
 
   try {
     if (platform === 'meta') {
-      const ads = await scrapeMetaAds({ keywords, advertiser });
-      return NextResponse.json({ ads });
+      const { ads, error } = await fetchMetaAds({ keywords, advertiser });
+      return NextResponse.json({ ads, error });
     }
     if (platform === 'linkedin') {
-      const ads = await scrapeLinkedInAds({ advertiser });
-      return NextResponse.json({ ads });
+      const { ads, error } = await fetchLinkedInAds({ keywords, advertiser });
+      return NextResponse.json({ ads, error });
     }
     if (platform === 'google') {
-      const ads = await scrapeGoogleAds({ keywords });
-      return NextResponse.json({ ads });
+      const { ads, error } = await fetchGoogleAds({ keywords });
+      return NextResponse.json({ ads, error });
     }
     // If no platform, aggregate all
     const [meta, linkedin, google] = await Promise.all([
-      scrapeMetaAds({ keywords, advertiser }),
-      scrapeLinkedInAds({ advertiser }),
-      scrapeGoogleAds({ keywords }),
+      fetchMetaAds({ keywords, advertiser }),
+      fetchLinkedInAds({ keywords, advertiser }),
+      fetchGoogleAds({ keywords }),
     ]);
-    return NextResponse.json({ ads: [...meta, ...linkedin, ...google] });
+    return NextResponse.json({
+      ads: [...(meta.ads || []), ...(linkedin.ads || []), ...(google.ads || [])],
+      errors: { meta: meta.error, linkedin: linkedin.error, google: google.error },
+    });
   } catch (e) {
-    return NextResponse.json({ ads: [], error: 'Scraping error' }, { status: 500 });
+    return NextResponse.json({ ads: [], error: 'API error', debug: String(e) }, { status: 500 });
   }
 } 

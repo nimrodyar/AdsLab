@@ -26,6 +26,7 @@ export default function Home() {
       const data = await res.json();
       if (res.ok) {
         setAds(data.ads || []);
+        if (data.error) setError(data.error);
       } else {
         setError(data.error || 'Unknown error');
       }
@@ -90,14 +91,39 @@ export default function Home() {
                 {ads.map((ad, idx) => (
                   <div
                     key={idx}
-                    className="border border-blue-100 rounded-2xl p-5 bg-white shadow-md hover:shadow-2xl transition-all duration-200 ease-in-out cursor-pointer group"
+                    className="border border-blue-100 rounded-2xl p-5 bg-white shadow-md hover:shadow-2xl transition-all duration-200 ease-in-out cursor-pointer group flex flex-col sm:flex-row gap-4 items-center"
                   >
-                    <div className="font-semibold mb-1 break-words text-blue-700 group-hover:underline">{ad.sponsor || ad.advertiser || 'Unknown Advertiser'}</div>
-                    <div className="text-base text-gray-800 mb-2 break-words whitespace-pre-line leading-relaxed">{ad.ad_text}</div>
-                    <div className="flex flex-wrap gap-3 text-xs text-gray-500 mt-2">
-                      <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded font-medium">{ad.platform?.toUpperCase()}</span>
-                      {ad.start_date && <span className="bg-gray-100 px-2 py-1 rounded">Start: {ad.start_date}</span>}
-                      {ad.media_type && <span className="bg-gray-100 px-2 py-1 rounded">Type: {ad.media_type}</span>}
+                    {ad.image && (
+                      <img
+                        src={ad.image}
+                        alt="Ad visual"
+                        className="w-24 h-24 object-cover rounded-xl border border-gray-200 mb-2 sm:mb-0"
+                        style={{ minWidth: 96, minHeight: 96 }}
+                        loading="lazy"
+                      />
+                    )}
+                    <div className="flex-1 w-full">
+                      <div className="font-semibold mb-1 break-words text-blue-700 group-hover:underline text-lg">
+                        {ad.sponsor || ad.advertiser || 'Unknown Advertiser'}
+                      </div>
+                      <div className="text-base text-gray-800 mb-2 break-words whitespace-pre-line leading-relaxed">
+                        {ad.ad_text}
+                      </div>
+                      <div className="flex flex-wrap gap-3 text-xs text-gray-500 mt-2 items-center">
+                        <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded font-medium">{ad.platform?.toUpperCase()}</span>
+                        {ad.start_date && <span className="bg-gray-100 px-2 py-1 rounded">Start: {ad.start_date}</span>}
+                        {ad.media_type && <span className="bg-gray-100 px-2 py-1 rounded">Type: {ad.media_type}</span>}
+                        {ad.link && (
+                          <a
+                            href={ad.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="ml-2 text-blue-600 underline hover:text-blue-800"
+                          >
+                            View Ad
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
